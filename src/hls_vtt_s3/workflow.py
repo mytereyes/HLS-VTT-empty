@@ -11,7 +11,6 @@ from .errors import HlsVttError, PromotionError, S3RepositoryError
 from .manifest_parser import (
     decode_utf8,
     detect_audio_language,
-    ensure_no_subtitle_conflict,
     modify_master_manifest,
     parse_source_playlist,
     validate_secondary_language,
@@ -65,8 +64,6 @@ def prepare_ad(repository: S3Repository, ad_prefix: str) -> PreparedAd:
     source_playlist = parse_source_playlist(texts[VIDEO_PLAYLIST_NAME])
     language_selection = detect_audio_language(texts[H264_MANIFEST_NAME])
     language = language_selection.language
-    ensure_no_subtitle_conflict(texts[H264_MANIFEST_NAME], H264_MANIFEST_NAME)
-    ensure_no_subtitle_conflict(texts[SECONDARY_MANIFEST_NAME], SECONDARY_MANIFEST_NAME)
     validate_secondary_language(texts[SECONDARY_MANIFEST_NAME], language)
 
     segments, _cues = generate_vtt_segments(source_playlist, language)

@@ -17,7 +17,7 @@ For every immediate Ad prefix under `s3://dlar-prod/ads/VODv3/H264/HLS/` (or a c
 6. Adds one `TYPE=SUBTITLES` declaration to both master manifests and adds `SUBTITLES="vtt"` to every stream variant.
 7. In `--apply` mode only, stages every output, verifies exact staged content, then promotes in dependency order.
 
-One malformed or incomplete Ad becomes `FAILED`; processing continues for the remaining Ads. Existing subtitle configuration is a conflict and is never merged or replaced.
+One malformed or incomplete Ad becomes `FAILED`; processing continues for the remaining Ads. If the subtitle playlist is missing but either master already contains the exact generated `vtt` declaration or `SUBTITLES="vtt"` stream references, the application reconciles that partial state: matching tags are preserved and only missing tags are added. Any nonmatching subtitle URI, group, language, declaration format, duplicate declaration/attribute, or stream reference remains a hard conflict and is never merged or replaced.
 
 ## Timing and language rules
 
@@ -114,6 +114,16 @@ hls-vtt-s3 --log-level DEBUG --ad-id XXX1
 ```
 
 Dry-run performs downloads, parsing, generation, and all in-memory validations, and reports every planned final key. It performs **no** `PutObject`, `CopyObject`, or `DeleteObjects` operation and creates no staging prefix. S3 changes require the explicit `--apply` flag.
+
+### Partially prepared Ads
+
+If `h264_manifest-vtt-hls-h264-subtitle.m3u8` is absent but `h264_manifest.m3u8` or `Manifest.m3u8` was partially updated earlier, the application accepts only this exact declaration for the selected language:
+
+```text
+#EXT-X-MEDIA:TYPE=SUBTITLES,URI="h264_manifest-vtt-hls-h264-subtitle.m3u8",GROUP-ID="vtt",LANGUAGE="{language}",NAME="Subtitle0",DEFAULT=NO,AUTOSELECT=YES
+```
+
+It also accepts an existing `SUBTITLES="vtt"` on a stream variant. Existing matching pieces are preserved, missing declarations/references are added, and the VTT segments and playlist are generated normally. Any other subtitle configuration fails that Ad before staging or final writes. If the final VTT playlist already exists, the primary idempotency rule still skips the entire Ad.
 
 ## IAM permissions
 

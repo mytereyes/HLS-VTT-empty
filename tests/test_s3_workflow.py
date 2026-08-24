@@ -114,6 +114,67 @@ def test_dry_run_parses_and_reports_but_never_writes(
     assert not fake_s3.operations(*WRITE_OPERATIONS)
 
 
+def test_apply_reconciles_exact_existing_vtt_tags_when_playlist_is_missing(
+    fake_s3: FakeS3Client, video_text: str, h264_fre_text: str, secondary_fre_text: str
+) -> None:
+    subtitle = (
+        '#EXT-X-MEDIA:TYPE=SUBTITLES,URI="h264_manifest-vtt-hls-h264-subtitle.m3u8",'
+        'GROUP-ID="vtt",LANGUAGE="fre",NAME="Subtitle0",DEFAULT=NO,AUTOSELECT=YES'
+    )
+    h264_with_partial_vtt = h264_fre_text.replace(
+        "#EXT-X-STREAM-INF:", f"{subtitle}\n#EXT-X-STREAM-INF:", 1
+    )
+    secondary_with_declaration = secondary_fre_text + f"{subtitle}\n"
+    prefix = seed_ad(
+        fake_s3,
+        "RECONCILE",
+        video_text,
+        h264_with_partial_vtt,
+        secondary_with_declaration,
+    )
+
+    result = process_ad(repository(fake_s3), prefix, apply=True)
+
+    assert result.status is AdStatus.PROCESSED
+    updated_h264 = fake_s3.objects[prefix + H264_MANIFEST_NAME].body.decode("utf-8")
+    updated_secondary = fake_s3.objects[prefix + SECONDARY_MANIFEST_NAME].body.decode(
+        "utf-8"
+    )
+    assert updated_h264.count(subtitle) == 1
+    assert updated_secondary.count(subtitle) == 1
+    assert all(
+        line.count('SUBTITLES="vtt"') == 1
+        for line in updated_h264.splitlines()
+        if line.startswith("#EXT-X-STREAM-INF:")
+    )
+    assert prefix + VTT_PLAYLIST_NAME in fake_s3.objects
+
+
+def test_conflicting_existing_subtitle_declaration_fails_without_writes(
+    fake_s3: FakeS3Client, video_text: str, h264_fre_text: str, secondary_fre_text: str
+) -> None:
+    conflict = (
+        '#EXT-X-MEDIA:TYPE=SUBTITLES,URI="other.m3u8",GROUP-ID="other",'
+        'LANGUAGE="fre",NAME="Other",DEFAULT=NO,AUTOSELECT=YES'
+    )
+    prefix = seed_ad(
+        fake_s3,
+        "CONFLICT",
+        video_text,
+        h264_fre_text.replace(
+            "#EXT-X-STREAM-INF:", f"{conflict}\n#EXT-X-STREAM-INF:", 1
+        ),
+        secondary_fre_text,
+    )
+
+    result = process_ad(repository(fake_s3), prefix, apply=True)
+
+    assert result.status is AdStatus.FAILED
+    assert result.error_type == "ManifestConflictError"
+    assert "does not exactly match" in (result.error_message or "")
+    assert not fake_s3.operations(*WRITE_OPERATIONS)
+
+
 def test_apply_stages_verifies_promotes_in_dependency_order_and_cleans_up(
     fake_s3: FakeS3Client, video_text: str, h264_fre_text: str, secondary_fre_text: str
 ) -> None:

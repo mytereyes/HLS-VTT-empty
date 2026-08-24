@@ -174,16 +174,47 @@ def validate_secondary_language(text: str, expected_language: str) -> None:
         )
 
 
-def ensure_no_subtitle_conflict(text: str, object_name: str) -> None:
+def validate_reconcilable_subtitle_config(
+    text: str, language: str, object_name: str
+) -> bool:
+    """Validate existing subtitle tags and return whether the exact declaration exists."""
+    expected_declaration = SUBTITLE_DECLARATION_TEMPLATE.format(
+        uri=VTT_PLAYLIST_NAME, language=language
+    )
+    declarations = [
+        line for line in text.splitlines() if _is_media_type(line, "SUBTITLES")
+    ]
+    if len(declarations) > 1:
+        raise ManifestConflictError(
+            f"{object_name} contains multiple SUBTITLES media declarations."
+        )
+    if declarations and declarations[0] != expected_declaration:
+        raise ManifestConflictError(
+            f"{object_name} contains a SUBTITLES media declaration that does not "
+            "exactly match the expected vtt configuration."
+        )
+
     for line in text.splitlines():
-        if _is_media_type(line, "SUBTITLES"):
+        if not line.startswith("#EXT-X-STREAM-INF:"):
+            continue
+        subtitle_attribute_count = len(
+            re.findall(r'(?:^|,)\s*SUBTITLES\s*=', line.split(":", 1)[1])
+        )
+        if subtitle_attribute_count > 1:
             raise ManifestConflictError(
-                f"{object_name} already contains a SUBTITLES media declaration."
+                f"{object_name} contains multiple SUBTITLES attributes on one stream."
             )
-        if line.startswith("#EXT-X-STREAM-INF:") and _attribute(line, "SUBTITLES") is not None:
+        subtitle_group = _attribute(line, "SUBTITLES")
+        exact_vtt_attribute = re.search(
+            r'(?:^|,)\s*SUBTITLES\s*=\s*"vtt"\s*(?=,|$)',
+            line.split(":", 1)[1],
+        )
+        if subtitle_group is not None and exact_vtt_attribute is None:
             raise ManifestConflictError(
-                f"{object_name} already contains a SUBTITLES stream attribute."
+                f"{object_name} stream SUBTITLES configuration does not exactly "
+                'match SUBTITLES="vtt".'
             )
+    return bool(declarations)
 
 
 def _newline_style(text: str) -> str:
@@ -208,11 +239,13 @@ def _variant_uris(lines: list[str]) -> tuple[str, ...]:
 
 
 def modify_master_manifest(text: str, language: str, object_name: str) -> str:
-    """Insert one subtitle declaration and annotate all stream variants."""
+    """Reconcile the exact vtt declaration and annotate missing stream references."""
     validate_language_token(language)
     if _first_nonempty_line(text) != "#EXTM3U":
         raise ParseError(f"{object_name} must start with #EXTM3U.")
-    ensure_no_subtitle_conflict(text, object_name)
+    has_subtitle_declaration = validate_reconcilable_subtitle_config(
+        text, language, object_name
+    )
 
     newline = _newline_style(text)
     original_lines = text.splitlines()
@@ -222,26 +255,35 @@ def modify_master_manifest(text: str, language: str, object_name: str) -> str:
         line.startswith("#EXT-X-STREAM-INF:") for line in original_lines
     )
 
-    updated_lines = [
-        f'{line},SUBTITLES="vtt"' if line.startswith("#EXT-X-STREAM-INF:") else line
-        for line in original_lines
-    ]
-    audio_indexes = [
-        index for index, line in enumerate(updated_lines) if _is_media_type(line, "AUDIO")
-    ]
-    if audio_indexes:
-        insertion_index = audio_indexes[-1] + 1
-    else:
-        header_index = next(
-            (index for index, line in enumerate(updated_lines) if line.strip() == "#EXTM3U"),
-            0,
-        )
-        insertion_index = header_index + 1
+    updated_lines = []
+    for line in original_lines:
+        if line.startswith("#EXT-X-STREAM-INF:") and _attribute(line, "SUBTITLES") is None:
+            updated_lines.append(f'{line},SUBTITLES="vtt"')
+        else:
+            updated_lines.append(line)
 
     subtitle_line = SUBTITLE_DECLARATION_TEMPLATE.format(
         uri=VTT_PLAYLIST_NAME, language=language
     )
-    updated_lines.insert(insertion_index, subtitle_line)
+    if not has_subtitle_declaration:
+        audio_indexes = [
+            index
+            for index, line in enumerate(updated_lines)
+            if _is_media_type(line, "AUDIO")
+        ]
+        if audio_indexes:
+            insertion_index = audio_indexes[-1] + 1
+        else:
+            header_index = next(
+                (
+                    index
+                    for index, line in enumerate(updated_lines)
+                    if line.strip() == "#EXTM3U"
+                ),
+                0,
+            )
+            insertion_index = header_index + 1
+        updated_lines.insert(insertion_index, subtitle_line)
     updated = newline.join(updated_lines) + newline
 
     if _audio_lines(updated) != original_audio:
