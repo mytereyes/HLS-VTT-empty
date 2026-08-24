@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hls-vtt-s3"
+version = "1.0.0"
+description = "Safely add generated WebVTT subtitle tracks to HLS ads in Amazon S3"
+requires-python = ">=3.10"
+dependencies = ["boto3>=1.43.78,<2"]
+
+[project.scripts]
+hls-vtt-s3 = "hls_vtt_s3.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+source = ["hls_vtt_s3"]
+branch = true
