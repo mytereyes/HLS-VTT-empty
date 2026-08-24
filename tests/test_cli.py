@@ -47,6 +47,9 @@ def test_cli_defaults_to_dry_run_and_writes_json_report(
         return report()
 
     monkeypatch.setattr(cli, "boto3", DummyBoto3())  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        cli, "create_s3_client", lambda *_args, **_kwargs: object()
+    )  # type: ignore[attr-defined]
     monkeypatch.setattr(cli, "process_batch", fake_process)  # type: ignore[attr-defined]
     assert cli.main(["--prefix", "/base///", "--report-file", str(target)]) == 0
     assert captured["prefix"] == "base/"
@@ -66,6 +69,9 @@ def test_cli_apply_and_failed_report_return_nonzero(monkeypatch: object) -> None
         return report(failed=True)
 
     monkeypatch.setattr(cli, "boto3", DummyBoto3())  # type: ignore[attr-defined]
+    monkeypatch.setattr(
+        cli, "create_s3_client", lambda *_args, **_kwargs: object()
+    )  # type: ignore[attr-defined]
     monkeypatch.setattr(cli, "process_batch", fake_process)  # type: ignore[attr-defined]
     assert cli.main(["--apply", "--ad-prefix", "AD/"]) == 1
     assert captured["apply"] is True
@@ -73,11 +79,10 @@ def test_cli_apply_and_failed_report_return_nonzero(monkeypatch: object) -> None
 
 
 def test_cli_handles_boto3_initialization_failure(monkeypatch: object) -> None:
-    class FailingBoto3:
-        def client(self, *_args: object, **_kwargs: object) -> object:
-            raise NoCredentialsError()
+    def fail_create(*_args: object, **_kwargs: object) -> object:
+        raise NoCredentialsError()
 
-    monkeypatch.setattr(cli, "boto3", FailingBoto3())  # type: ignore[attr-defined]
+    monkeypatch.setattr(cli, "create_s3_client", fail_create)  # type: ignore[attr-defined]
     assert cli.main([]) == 1
 
 

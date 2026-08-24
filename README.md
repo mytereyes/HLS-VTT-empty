@@ -70,7 +70,7 @@ python -m pip install -r requirements.txt
 python -m pip install -e .
 ```
 
-Without authentication options, the application retains its original behavior and uses boto3's standard credential provider chain. Depending on the environment, that chain can use environment variables, shared AWS credentials/configuration files, container credentials, EC2 instance roles, and other providers supported by the installed botocore version. The application does not invoke the AWS CLI. Authentication and S3-client construction happen before any S3 operation.
+Without authentication options, the application first checks `~/.aws/credentials` for a `[default]` profile. When that section exists, it creates `boto3.Session(profile_name="default")`; the application scans only section headers and delegates credential loading to boto3. This explicit default profile takes precedence over environment credentials. If the file is absent or has no `[default]` section, the application opens the same three-choice authentication menu described below instead of silently selecting another provider. The application does not invoke the AWS CLI. Authentication and S3-client construction happen before any S3 operation.
 
 Prefer IAM roles, short-lived credentials, and AWS IAM Identity Center (SSO) profiles over long-lived IAM user access keys. Configure and authenticate an SSO profile outside this application using your organization's approved AWS tooling; after its cached session is available, select it by profile name:
 
@@ -93,6 +93,8 @@ The menu offers:
 3. temporary AWS credentials for only the current process.
 
 All temporary credential values—access key ID, secret access key, and optional session token—use hidden terminal input. They are passed directly to in-memory boto3 client construction and are not written to disk, logs, reports, arguments, or object representations. The application never requests an AWS console username or password. Do not place credentials in source code, command-line arguments, shell history, logs, reports, or committed configuration files.
+
+Menu choice 1 explicitly selects boto3's standard provider chain, which can use environment variables, shared AWS configuration, container credentials, EC2 instance roles, and other providers supported by the installed botocore version. Use `--prompt-auth` when you always want the menu even if `~/.aws/credentials` contains `[default]`. Use `--profile NAME` to bypass both default-file detection and the menu.
 
 EOF, Ctrl+C, invalid choices, empty required fields, or credential-selection failures terminate cleanly without a traceback and return exit code `3`.
 

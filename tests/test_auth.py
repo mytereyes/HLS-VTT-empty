@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -29,9 +30,82 @@ class FakeBoto3:
         return FakeSession(self.calls, **kwargs)
 
 
-def test_default_auth_uses_standard_boto3_credential_chain() -> None:
+def test_default_auth_prefers_default_profile_in_shared_credentials_file(
+    tmp_path: Path,
+) -> None:
+    credentials_file = tmp_path / ".aws" / "credentials"
+    credentials_file.parent.mkdir()
+    credentials_file.write_text(
+        "[default]\naws_access_key_id = not-read-by-application\n"
+        "aws_secret_access_key = not-read-by-application\n",
+        encoding="utf-8",
+    )
     boto3_module = FakeBoto3()
-    create_s3_client(boto3_module, region="us-east-1", config=object())
+    create_s3_client(
+        boto3_module,
+        region="us-east-1",
+        config=object(),
+        credentials_path=credentials_file,
+    )
+    assert boto3_module.calls[0] == ("session", {"profile_name": "default"})
+    assert boto3_module.calls[1][0] == "session_client"
+
+
+@pytest.mark.parametrize(
+    "content",
+    [None, "[production]\naws_access_key_id = example\n"],
+)
+def test_default_auth_opens_menu_when_default_credentials_profile_is_unavailable(
+    tmp_path: Path,
+    content: str | None,
+) -> None:
+    credentials_file = tmp_path / ".aws" / "credentials"
+    if content is not None:
+        credentials_file.parent.mkdir()
+        credentials_file.write_text(content, encoding="utf-8")
+    answers = iter(("1",))
+    boto3_module = FakeBoto3()
+    create_s3_client(
+        boto3_module,
+        region=None,
+        config=object(),
+        credentials_path=credentials_file,
+        input_reader=lambda _prompt: next(answers),
+    )
+    assert boto3_module.calls[0][0] == "client"
+
+
+def test_explicit_profile_takes_precedence_over_default_credentials_file(
+    tmp_path: Path,
+) -> None:
+    credentials_file = tmp_path / "credentials"
+    credentials_file.write_text("[default]\n", encoding="utf-8")
+    boto3_module = FakeBoto3()
+    create_s3_client(
+        boto3_module,
+        region=None,
+        config=object(),
+        profile="production",
+        credentials_path=credentials_file,
+        input_reader=lambda _prompt: pytest.fail("explicit profile opened menu"),
+    )
+    assert boto3_module.calls[0] == ("session", {"profile_name": "production"})
+
+
+def test_explicit_prompt_auth_takes_precedence_over_default_credentials_file(
+    tmp_path: Path,
+) -> None:
+    credentials_file = tmp_path / "credentials"
+    credentials_file.write_text("[default]\n", encoding="utf-8")
+    boto3_module = FakeBoto3()
+    create_s3_client(
+        boto3_module,
+        region=None,
+        config=object(),
+        prompt_auth=True,
+        credentials_path=credentials_file,
+        input_reader=lambda _prompt: "1",
+    )
     assert boto3_module.calls[0][0] == "client"
     assert not any(name == "session" for name, _value in boto3_module.calls)
 

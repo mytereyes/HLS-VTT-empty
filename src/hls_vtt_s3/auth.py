@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from getpass import getpass
+from pathlib import Path
+import re
 from typing import Any, Callable
 
 
@@ -28,6 +30,35 @@ def _client_kwargs(region: str | None, config: Any) -> dict[str, Any]:
     return {"region_name": region, "config": config}
 
 
+def _has_default_credentials_profile(credentials_path: Path) -> bool:
+    """Scan section headers without parsing credential values into application state."""
+    try:
+        with credentials_path.expanduser().open(encoding="utf-8") as stream:
+            for line in stream:
+                match = re.fullmatch(r"\s*\[([^]]+)]\s*(?:[#;].*)?", line.rstrip("\r\n"))
+                if match and match.group(1).strip() == "default":
+                    return True
+    except (OSError, UnicodeError):
+        return False
+    return False
+
+
+def _profile_client(
+    boto3_module: Any,
+    profile_name: str,
+    *,
+    region: str | None,
+    config: Any,
+) -> Any:
+    try:
+        session = boto3_module.Session(profile_name=profile_name)
+        return session.client("s3", **_client_kwargs(region, config))
+    except Exception:
+        raise AuthenticationError(
+            f"Unable to initialize AWS profile {profile_name!r}."
+        ) from None
+
+
 def create_s3_client(
     boto3_module: Any,
     *,
@@ -36,6 +67,7 @@ def create_s3_client(
     profile: str | None = None,
     prompt_auth: bool = False,
     input_reader: Callable[[str], str] | None = None,
+    credentials_path: Path | None = None,
 ) -> Any:
     """Create an S3 client without retaining or exposing credential values."""
     reader = input if input_reader is None else input_reader
@@ -43,16 +75,17 @@ def create_s3_client(
         profile_name = profile.strip()
         if not profile_name:
             raise AuthenticationError("AWS profile name cannot be empty.")
-        try:
-            session = boto3_module.Session(profile_name=profile_name)
-            return session.client("s3", **_client_kwargs(region, config))
-        except Exception:
-            raise AuthenticationError(
-                f"Unable to initialize AWS profile {profile_name!r}."
-            ) from None
+        return _profile_client(
+            boto3_module, profile_name, region=region, config=config
+        )
 
     if not prompt_auth:
-        return boto3_module.client("s3", **_client_kwargs(region, config))
+        shared_credentials = credentials_path or Path("~/.aws/credentials")
+        if _has_default_credentials_profile(shared_credentials):
+            return _profile_client(
+                boto3_module, "default", region=region, config=config
+            )
+        prompt_auth = True
 
     print("Select AWS authentication method:")
     print("  1. Use the standard boto3 credential chain (default)")
@@ -66,13 +99,9 @@ def create_s3_client(
         profile_name = _read_input("AWS profile name: ", reader)
         if not profile_name:
             raise AuthenticationError("AWS profile name cannot be empty.")
-        try:
-            session = boto3_module.Session(profile_name=profile_name)
-            return session.client("s3", **_client_kwargs(region, config))
-        except Exception:
-            raise AuthenticationError(
-                f"Unable to initialize AWS profile {profile_name!r}."
-            ) from None
+        return _profile_client(
+            boto3_module, profile_name, region=region, config=config
+        )
     if choice == "3":
         access_key = _read_secret("AWS access key ID: ")
         if not access_key:
