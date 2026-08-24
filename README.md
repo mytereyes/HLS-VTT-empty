@@ -56,6 +56,46 @@ python -m pip install -e .
 
 An editable install provides the `hls-vtt-s3` command. Alternatively, after installing dependencies, use `PYTHONPATH=src python -m hls_vtt_s3` in place of `hls-vtt-s3`.
 
+## Local Linux setup and authentication
+
+The same application can run on a local Linux workstation. Install Python 3.10 or newer and its virtual-environment support with your distribution's approved package manager, then install the project:
+
+```bash
+git clone YOUR_APPROVED_REPOSITORY_URL HLS-VTT-empty-add
+cd HLS-VTT-empty-add
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -e .
+```
+
+Without authentication options, the application retains its original behavior and uses boto3's standard credential provider chain. Depending on the environment, that chain can use environment variables, shared AWS credentials/configuration files, container credentials, EC2 instance roles, and other providers supported by the installed botocore version. The application does not invoke the AWS CLI. Authentication and S3-client construction happen before any S3 operation.
+
+Prefer IAM roles, short-lived credentials, and AWS IAM Identity Center (SSO) profiles over long-lived IAM user access keys. Configure and authenticate an SSO profile outside this application using your organization's approved AWS tooling; after its cached session is available, select it by profile name:
+
+```bash
+hls-vtt-s3 --profile production-readonly --ad-id XXX1 --log-file logs/dry-run.log --report-file reports/dry-run.json
+```
+
+`--profile PROFILE_NAME` creates a `boto3.Session(profile_name=PROFILE_NAME)` and does not open an interactive prompt. `--profile` and `--prompt-auth` are mutually exclusive.
+
+Interactive selection is available for local terminals:
+
+```bash
+hls-vtt-s3 --prompt-auth --ad-id XXX1 --log-file logs/dry-run.log --report-file reports/dry-run.json
+```
+
+The menu offers:
+
+1. the standard boto3 credential chain (the default when Enter is pressed);
+2. a named AWS profile;
+3. temporary AWS credentials for only the current process.
+
+All temporary credential values—access key ID, secret access key, and optional session token—use hidden terminal input. They are passed directly to in-memory boto3 client construction and are not written to disk, logs, reports, arguments, or object representations. The application never requests an AWS console username or password. Do not place credentials in source code, command-line arguments, shell history, logs, reports, or committed configuration files.
+
+EOF, Ctrl+C, invalid choices, empty required fields, or credential-selection failures terminate cleanly without a traceback and return exit code `3`.
+
 ## Test safely (no AWS required)
 
 The tests use an in-memory fake S3 client and do not require credentials or make network calls.
@@ -114,6 +154,45 @@ hls-vtt-s3 --log-level DEBUG --ad-id XXX1
 ```
 
 Dry-run performs downloads, parsing, generation, and all in-memory validations, and reports every planned final key. It performs **no** `PutObject`, `CopyObject`, or `DeleteObjects` operation and creates no staging prefix. S3 changes require the explicit `--apply` flag.
+
+### Persistent local logs and reports
+
+`--log-file PATH` retains console logging and additionally writes UTF-8 logs to a rotating local file. Missing log parent directories are created automatically. Each log file is limited to 10 MiB, with five backup files retained. `--log-level` controls both console and file handlers. `--report-file` retains its existing JSON behavior and does not create a missing parent directory; create report directories before running.
+
+Logs and JSON reports may contain S3 keys, Ad identifiers, validation/error details, staging prefixes, and promoted-object lists. Restrict local directory/file permissions according to your operational data policy. Neither artifact is intended to contain credentials, tokens, signed URLs, or sensitive environment values.
+
+Prepare local output directories with restrictive permissions appropriate to your environment before using the examples, for example:
+
+```bash
+mkdir -p logs reports
+chmod 700 logs reports
+```
+
+Recommended local dry run for one Ad using the interactive menu:
+
+```bash
+hls-vtt-s3 --prompt-auth --ad-id XXX1 --log-file logs/dry-run.log --report-file reports/dry-run.json
+```
+
+Dry run all Ads using a named read-only profile:
+
+```bash
+hls-vtt-s3 --profile production-readonly --log-file logs/all-dry-run.log --report-file reports/all-dry-run.json
+```
+
+Controlled apply for one Ad:
+
+```bash
+hls-vtt-s3 --apply --profile production-writer --ad-id XXX1 --log-file logs/apply-XXX1.log --report-file reports/apply-XXX1.json
+```
+
+Apply all Ads only after canary validation and change approval:
+
+```bash
+hls-vtt-s3 --apply --profile production-writer --log-file logs/apply-all.log --report-file reports/apply-all.json
+```
+
+Always perform and review a one-Ad dry run before using `--apply`, especially before an all-Ad operation.
 
 ### Partially prepared Ads
 
@@ -221,6 +300,7 @@ Exit codes:
 - `0`: completed with no `FAILED` Ads; `SKIPPED` is successful.
 - `1`: one or more Ads failed, or an AWS/filesystem error prevented batch completion.
 - `2`: invalid command-line syntax or argument configuration reported by `argparse`.
+- `3`: authentication selection failed or interactive authentication input was cancelled.
 
 ## Post-deployment validation
 
