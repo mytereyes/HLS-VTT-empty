@@ -9,7 +9,7 @@ from typing import Any
 
 VIDEO_PLAYLIST_NAME = "h264_manifest-1080-hls-h264-24p-video.m3u8"
 H264_MANIFEST_NAME = "h264_manifest.m3u8"
-SECONDARY_MANIFEST_NAME = "manifest.m3u8"
+SECONDARY_MANIFEST_NAME = "Manifest.m3u8"
 VTT_PLAYLIST_NAME = "h264_manifest-vtt-hls-h264-subtitle.m3u8"
 VTT_CONTENT_TYPE = "text/vtt; charset=utf-8"
 HLS_CONTENT_TYPE = "application/vnd.apple.mpegurl"

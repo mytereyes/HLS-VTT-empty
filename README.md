@@ -11,7 +11,7 @@ For every immediate Ad prefix under `s3://dlar-prod/ads/VODv3/H264/HLS/` (or a c
 3. Reads and validates these exact, case-sensitive objects:
    - `h264_manifest-1080-hls-h264-24p-video.m3u8` (timing authority)
    - `h264_manifest.m3u8` (authoritative audio language and primary master)
-   - `manifest.m3u8` (secondary master)
+  - `Manifest.m3u8` (secondary master)
 4. Generates one `vtt-hls-h264-{language}-{index}.vtt` segment per source `#EXTINF`.
 5. Generates `h264_manifest-vtt-hls-h264-subtitle.m3u8`.
 6. Adds one `TYPE=SUBTITLES` declaration to both master manifests and adds `SUBTITLES="vtt"` to every stream variant.
@@ -30,7 +30,7 @@ The final source segment receives exactly 15 ms extra in two places only:
 
 For source durations `6.000`, `6.000`, and `3.042`, the cues end at `00:00:06.000`, `00:00:12.000`, and `00:00:15.057`; the final subtitle duration is `3.057`. Earlier segments and all original media are unchanged.
 
-The first AUDIO declaration in `h264_manifest.m3u8` is authoritative. Its exact `LANGUAGE` value is used in the subtitle declarations, VTT filenames, and playlist references. A conservative token of letters, digits, and hyphens is required. Differing later audio languages produce a warning and the first is selected. Missing/invalid language on the first primary AUDIO declaration or a mismatch with the first AUDIO language in `manifest.m3u8` fails that Ad. A secondary manifest with no AUDIO declaration is allowed; it receives the selected primary language.
+The first AUDIO declaration in `h264_manifest.m3u8` is authoritative. Its exact `LANGUAGE` value is used in the subtitle declarations, VTT filenames, and playlist references. A conservative token of letters, digits, and hyphens is required. Differing later audio languages produce a warning and the first is selected. Missing/invalid language on the first primary AUDIO declaration or a mismatch with the first AUDIO language in `Manifest.m3u8` fails that Ad. A secondary manifest with no AUDIO declaration is allowed; it receives the selected primary language.
 
 ## Repository layout
 
@@ -173,7 +173,7 @@ Immediately before promotion, it checks again that the final subtitle playlist d
 1. VTT segments;
 2. VTT subtitle playlist;
 3. `h264_manifest.m3u8`;
-4. `manifest.m3u8`.
+4. `Manifest.m3u8`.
 
 Each final object is downloaded and hash-verified after copy. New final segment/playlist keys use conditional `If-None-Match: *` copies, while each master replacement uses `If-Match` with the ETag captured before download. All source ETags (and version IDs when available) are rechecked after staging. These safeguards refuse known generated-key collisions and stale master replacements. Staging is deleted only after complete success. `--keep-staging-on-success` retains it intentionally.
 

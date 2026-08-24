@@ -61,7 +61,7 @@ def test_second_transformation_conflicts_instead_of_duplicating(h264_fre_text: s
 
 
 def test_audio_only_secondary_gets_one_declaration(secondary_fre_text: str) -> None:
-    updated = modify_master_manifest(secondary_fre_text, "fre", "manifest.m3u8")
+    updated = modify_master_manifest(secondary_fre_text, "fre", "Manifest.m3u8")
     assert updated.count(SUBTITLE_FRE) == 1
     assert secondary_fre_text.splitlines()[2] in updated.splitlines()
     assert "SUBTITLES=\"vtt\"" not in "\n".join(
@@ -73,7 +73,7 @@ def test_secondary_with_variants_gets_stream_attributes(secondary_fre_text: str)
     source = secondary_fre_text + (
         '#EXT-X-STREAM-INF:BANDWIDTH=100,CODECS="avc1,mp4a"\nvideo.m3u8\n'
     )
-    updated = modify_master_manifest(source, "fre", "manifest.m3u8")
+    updated = modify_master_manifest(source, "fre", "Manifest.m3u8")
     assert '#EXT-X-STREAM-INF:BANDWIDTH=100,CODECS="avc1,mp4a",SUBTITLES="vtt"' in updated
     assert "video.m3u8" in updated.splitlines()
 
@@ -81,4 +81,4 @@ def test_secondary_with_variants_gets_stream_attributes(secondary_fre_text: str)
 def test_stream_without_immediate_variant_uri_fails(secondary_fre_text: str) -> None:
     source = secondary_fre_text + "#EXT-X-STREAM-INF:BANDWIDTH=100\n#EXT-X-VERSION:3\n"
     with pytest.raises(ParseError, match="variant URI"):
-        modify_master_manifest(source, "fre", "manifest.m3u8")
+        modify_master_manifest(source, "fre", "Manifest.m3u8")

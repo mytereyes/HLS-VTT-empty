@@ -164,13 +164,13 @@ def validate_secondary_language(text: str, expected_language: str) -> None:
     language = _attribute(audio_lines[0], "LANGUAGE")
     if language is None or language == "":
         raise ParseError(
-            "The first AUDIO declaration in manifest.m3u8 has no valid LANGUAGE attribute."
+            "The first AUDIO declaration in Manifest.m3u8 has no valid LANGUAGE attribute."
         )
     validate_language_token(language)
     if language != expected_language:
         raise ValidationError(
             "Language mismatch: h264_manifest.m3u8 selected "
-            f"{expected_language!r}, but manifest.m3u8 uses {language!r}."
+            f"{expected_language!r}, but Manifest.m3u8 uses {language!r}."
         )
 
 
