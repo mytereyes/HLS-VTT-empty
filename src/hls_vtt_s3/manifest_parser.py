@@ -177,10 +177,8 @@ def validate_secondary_language(text: str, expected_language: str) -> None:
 def validate_reconcilable_subtitle_config(
     text: str, language: str, object_name: str
 ) -> bool:
-    """Validate existing subtitle tags and return whether the exact declaration exists."""
-    expected_declaration = SUBTITLE_DECLARATION_TEMPLATE.format(
-        uri=VTT_PLAYLIST_NAME, language=language
-    )
+    """Validate that existing subtitle tags identify only the managed vtt track."""
+    validate_language_token(language)
     declarations = [
         line for line in text.splitlines() if _is_media_type(line, "SUBTITLES")
     ]
@@ -188,11 +186,16 @@ def validate_reconcilable_subtitle_config(
         raise ManifestConflictError(
             f"{object_name} contains multiple SUBTITLES media declarations."
         )
-    if declarations and declarations[0] != expected_declaration:
-        raise ManifestConflictError(
-            f"{object_name} contains a SUBTITLES media declaration that does not "
-            "exactly match the expected vtt configuration."
-        )
+    if declarations:
+        declaration = declarations[0]
+        uri = _attribute(declaration, "URI")
+        group_id = _attribute(declaration, "GROUP-ID")
+        if uri != VTT_PLAYLIST_NAME or group_id != "vtt":
+            raise ManifestConflictError(
+                f"{object_name} contains a SUBTITLES media declaration for URI "
+                f"{uri!r} and GROUP-ID {group_id!r}; expected URI "
+                f"{VTT_PLAYLIST_NAME!r} and GROUP-ID 'vtt'."
+            )
 
     for line in text.splitlines():
         if not line.startswith("#EXT-X-STREAM-INF:"):
@@ -243,9 +246,7 @@ def modify_master_manifest(text: str, language: str, object_name: str) -> str:
     validate_language_token(language)
     if _first_nonempty_line(text) != "#EXTM3U":
         raise ParseError(f"{object_name} must start with #EXTM3U.")
-    has_subtitle_declaration = validate_reconcilable_subtitle_config(
-        text, language, object_name
-    )
+    validate_reconcilable_subtitle_config(text, language, object_name)
 
     newline = _newline_style(text)
     original_lines = text.splitlines()
@@ -257,6 +258,8 @@ def modify_master_manifest(text: str, language: str, object_name: str) -> str:
 
     updated_lines = []
     for line in original_lines:
+        if _is_media_type(line, "SUBTITLES"):
+            continue
         if line.startswith("#EXT-X-STREAM-INF:") and _attribute(line, "SUBTITLES") is None:
             updated_lines.append(f'{line},SUBTITLES="vtt"')
         else:
@@ -265,25 +268,24 @@ def modify_master_manifest(text: str, language: str, object_name: str) -> str:
     subtitle_line = SUBTITLE_DECLARATION_TEMPLATE.format(
         uri=VTT_PLAYLIST_NAME, language=language
     )
-    if not has_subtitle_declaration:
-        audio_indexes = [
-            index
-            for index, line in enumerate(updated_lines)
-            if _is_media_type(line, "AUDIO")
-        ]
-        if audio_indexes:
-            insertion_index = audio_indexes[-1] + 1
-        else:
-            header_index = next(
-                (
-                    index
-                    for index, line in enumerate(updated_lines)
-                    if line.strip() == "#EXTM3U"
-                ),
-                0,
-            )
-            insertion_index = header_index + 1
-        updated_lines.insert(insertion_index, subtitle_line)
+    audio_indexes = [
+        index
+        for index, line in enumerate(updated_lines)
+        if _is_media_type(line, "AUDIO")
+    ]
+    if audio_indexes:
+        insertion_index = audio_indexes[-1] + 1
+    else:
+        header_index = next(
+            (
+                index
+                for index, line in enumerate(updated_lines)
+                if line.strip() == "#EXTM3U"
+            ),
+            0,
+        )
+        insertion_index = header_index + 1
+    updated_lines.insert(insertion_index, subtitle_line)
     updated = newline.join(updated_lines) + newline
 
     if _audio_lines(updated) != original_audio:

@@ -150,6 +150,36 @@ def test_apply_reconciles_exact_existing_vtt_tags_when_playlist_is_missing(
     assert prefix + VTT_PLAYLIST_NAME in fake_s3.objects
 
 
+def test_apply_normalizes_stale_subtitle_language_to_authoritative_audio_language(
+    fake_s3: FakeS3Client, video_text: str, h264_fre_text: str, secondary_fre_text: str
+) -> None:
+    stale = (
+        '#EXT-X-MEDIA:TYPE=SUBTITLES,URI="h264_manifest-vtt-hls-h264-subtitle.m3u8",'
+        'GROUP-ID="vtt",LANGUAGE="eng",NAME="Subtitle0",DEFAULT=NO,AUTOSELECT=YES'
+    )
+    expected = stale.replace('LANGUAGE="eng"', 'LANGUAGE="fre"')
+    prefix = seed_ad(
+        fake_s3,
+        "NORMALIZE",
+        video_text,
+        h264_fre_text + stale + "\n",
+        secondary_fre_text,
+    )
+
+    result = process_ad(repository(fake_s3), prefix, apply=True)
+
+    assert result.status is AdStatus.PROCESSED
+    assert result.language == "fre"
+    updated_h264 = fake_s3.objects[prefix + H264_MANIFEST_NAME].body.decode("utf-8")
+    lines = updated_h264.splitlines()
+    audio_indexes = [index for index, line in enumerate(lines) if "TYPE=AUDIO" in line]
+    assert stale not in lines
+    assert lines.count(expected) == 1
+    assert lines.index(expected) == max(audio_indexes) + 1
+    assert prefix + "vtt-hls-h264-fre-0.vtt" in fake_s3.objects
+    assert prefix + VTT_PLAYLIST_NAME in fake_s3.objects
+
+
 def test_conflicting_existing_subtitle_declaration_fails_without_writes(
     fake_s3: FakeS3Client, video_text: str, h264_fre_text: str, secondary_fre_text: str
 ) -> None:
@@ -171,7 +201,7 @@ def test_conflicting_existing_subtitle_declaration_fails_without_writes(
 
     assert result.status is AdStatus.FAILED
     assert result.error_type == "ManifestConflictError"
-    assert "does not exactly match" in (result.error_message or "")
+    assert "expected URI" in (result.error_message or "")
     assert not fake_s3.operations(*WRITE_OPERATIONS)
 
 

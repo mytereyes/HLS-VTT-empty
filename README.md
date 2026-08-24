@@ -17,7 +17,7 @@ For every immediate Ad prefix under `s3://dlar-prod/ads/VODv3/H264/HLS/` (or a c
 6. Adds one `TYPE=SUBTITLES` declaration to both master manifests and adds `SUBTITLES="vtt"` to every stream variant.
 7. In `--apply` mode only, stages every output, verifies exact staged content, then promotes in dependency order.
 
-One malformed or incomplete Ad becomes `FAILED`; processing continues for the remaining Ads. If the subtitle playlist is missing but either master already contains the exact generated `vtt` declaration or `SUBTITLES="vtt"` stream references, the application reconciles that partial state: matching tags are preserved and only missing tags are added. Any nonmatching subtitle URI, group, language, declaration format, duplicate declaration/attribute, or stream reference remains a hard conflict and is never merged or replaced.
+One malformed or incomplete Ad becomes `FAILED`; processing continues for the remaining Ads. If the subtitle playlist is missing but either master already contains the managed VTT declaration or `SUBTITLES="vtt"` stream references, the application reconciles that partial state. A declaration is considered managed only when its URI is `h264_manifest-vtt-hls-h264-subtitle.m3u8` and its `GROUP-ID` is `vtt`; it is then replaced with the canonical declaration using the authoritative audio language and moved after the AUDIO declarations. Missing stream references are added. A different subtitle URI/group, duplicate declaration/attribute, or different stream group remains a hard conflict and is never merged or replaced.
 
 ## Timing and language rules
 
@@ -117,13 +117,21 @@ Dry-run performs downloads, parsing, generation, and all in-memory validations, 
 
 ### Partially prepared Ads
 
-If `h264_manifest-vtt-hls-h264-subtitle.m3u8` is absent but `h264_manifest.m3u8` or `Manifest.m3u8` was partially updated earlier, the application accepts only this exact declaration for the selected language:
+If `h264_manifest-vtt-hls-h264-subtitle.m3u8` is absent but `h264_manifest.m3u8` or `Manifest.m3u8` was partially updated earlier, the application recognizes a managed declaration by this URI and group:
+
+```text
+URI="h264_manifest-vtt-hls-h264-subtitle.m3u8",GROUP-ID="vtt"
+```
+
+It replaces that declaration with this canonical form using the first AUDIO declaration's authoritative language:
 
 ```text
 #EXT-X-MEDIA:TYPE=SUBTITLES,URI="h264_manifest-vtt-hls-h264-subtitle.m3u8",GROUP-ID="vtt",LANGUAGE="{language}",NAME="Subtitle0",DEFAULT=NO,AUTOSELECT=YES
 ```
 
-It also accepts an existing `SUBTITLES="vtt"` on a stream variant. Existing matching pieces are preserved, missing declarations/references are added, and the VTT segments and playlist are generated normally. Any other subtitle configuration fails that Ad before staging or final writes. If the final VTT playlist already exists, the primary idempotency rule still skips the entire Ad.
+The canonical declaration is placed immediately after the existing AUDIO declarations, even when the old declaration appeared elsewhere or used a stale language. For example, `LANGUAGE="eng"` is normalized to `LANGUAGE="fre"` when the first AUDIO declaration uses `fre`; generated segments are consequently named `vtt-hls-h264-fre-{index}.vtt`.
+
+The application also accepts an existing exact `SUBTITLES="vtt"` on a stream variant. Existing stream references are preserved, missing declarations/references are added, and the VTT segments and playlist are generated normally. A different subtitle URI, `GROUP-ID`, duplicate declaration/attribute, or different stream group fails that Ad before staging or final writes. If the final VTT playlist already exists, the primary idempotency rule still skips the entire Ad.
 
 ## IAM permissions
 

@@ -88,13 +88,32 @@ def test_exact_declaration_is_preserved_and_missing_stream_references_are_added(
             "h264_manifest-vtt-hls-h264-subtitle.m3u8", "other.m3u8"
         ),
         SUBTITLE_FRE.replace('GROUP-ID="vtt"', 'GROUP-ID="other"'),
-        SUBTITLE_FRE.replace('LANGUAGE="fre"', 'LANGUAGE="eng"'),
     ],
 )
 def test_conflicting_subtitle_declaration_still_fails(declaration: str) -> None:
     source = f'#EXTM3U\n#EXT-X-MEDIA:TYPE=AUDIO,LANGUAGE="fre"\n{declaration}\n'
     with pytest.raises(ManifestConflictError):
         modify_master_manifest(source, "fre", "h264_manifest.m3u8")
+
+
+def test_matching_vtt_declaration_is_normalized_to_audio_language_and_position(
+    h264_fre_text: str,
+) -> None:
+    stale = SUBTITLE_FRE.replace('LANGUAGE="fre"', 'LANGUAGE="eng"')
+    source = h264_fre_text + stale + "\n"
+
+    updated = modify_master_manifest(source, "fre", "h264_manifest.m3u8")
+    lines = updated.splitlines()
+    audio_indexes = [index for index, line in enumerate(lines) if "TYPE=AUDIO" in line]
+
+    assert stale not in lines
+    assert lines.count(SUBTITLE_FRE) == 1
+    assert lines.index(SUBTITLE_FRE) == max(audio_indexes) + 1
+    assert all(
+        line.count('SUBTITLES="vtt"') == 1
+        for line in lines
+        if line.startswith("#EXT-X-STREAM-INF:")
+    )
 
 
 def test_duplicate_exact_subtitle_declarations_fail() -> None:
